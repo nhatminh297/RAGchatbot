@@ -13,13 +13,12 @@ from langchain.vectorstores import Chroma
 from langchain.vectorstores import FAISS
 from langchain.text_splitter import NLTKTextSplitter
 from langchain.prompts import PromptTemplate
-from langchain import hub
-from openai import OpenAI
 
 
-os.environ["LANGCHAIN_TRACING_V2"] = "true"
-os.environ["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus"
-os.environ["LANGCHAIN_API_KEY"] = "ls__87dc3360db3c42dab3bf3f911e4923f0"
+
+# os.environ["LANGCHAIN_TRACING_V2"] = "true"
+# os.environ["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus"
+# os.environ["LANGCHAIN_API_KEY"] = 
 
 def get_docs(paths):
     loaders=[]
@@ -51,20 +50,19 @@ def getAgent(vectorstore):
     Use the following pieces of context to answer the question at the end. 
     If you don't know the answer, just say that you don't know, don't try to make up an answer. 
     Use five sentences maximum. Keep the answer as concise as possible. 
-    Always say "thanks for asking!" at the end of the answer. 
     {context}
     Question: {question}
     Helpful Answer:"""
     PROMPT = PromptTemplate.from_template(template)
         
     llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
-
     memory = ConversationBufferMemory(
         memory_key='chat_history', return_messages=True)
     
     agent = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=vectorstore.as_retriever(),
+        # retriever=get_parent_retriever(documents),
         memory=memory,
         combine_docs_chain_kwargs={"prompt": PROMPT}
     )
@@ -77,6 +75,7 @@ def set_vector_store(docs, embed_model, save_dir):
 load_dotenv()
 st.title("RAG ChatBot")
 
+paths = []
 with st.sidebar:
     openai_api_key = st.text_input("OpenAI API Key", key="chatbot_api_key", type="password")
     
@@ -84,7 +83,6 @@ with st.sidebar:
     uploaded_files = st.file_uploader("Upload your PDFs", accept_multiple_files=True)
     if uploaded_files is not None:
         destination_path = ".\docs"
-        paths = []
         for uploaded_file in uploaded_files:
             destination_file_path = os.path.join(destination_path, uploaded_file.name)
             paths.append(destination_file_path)
@@ -95,14 +93,13 @@ with st.sidebar:
             with st.spinner("Processing"):
                 raw_text = get_docs(paths)
                 docs = split_documents(raw_text)
-                embedding = GPT4AllEmbeddings()
-                set_vector_store(docs = docs, embed_model=embedding, save_dir='faiss_index')
+                set_vector_store(docs = docs, embed_model=GPT4AllEmbeddings(), save_dir='faiss_index')
+                
     def clear_chat_history():
         st.session_state.messages = [{"role": "assistant", "content": "How may I assist you today?"}]
     st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
 
 faiss_db = FAISS.load_local("faiss_index", GPT4AllEmbeddings())
-
 agent = getAgent(faiss_db)
 
 if "messages" not in st.session_state:
