@@ -9,7 +9,19 @@ from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.memory import ConversationBufferMemory
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings import GPT4AllEmbeddings
 from langchain.vectorstores import Chroma
+from langchain.vectorstores import FAISS
+from langchain.text_splitter import NLTKTextSplitter
+from langchain.agents.openai_functions_agent.agent_token_buffer_memory import (
+    AgentTokenBufferMemory,
+)
+from langchain import hub
+from langchain.agents.openai_functions_agent.base import OpenAIFunctionsAgent
+from langchain.prompts import MessagesPlaceholder
+from langchain.schema.messages import SystemMessage
+from langchain.agents.agent_toolkits import create_retriever_tool
+from langchain.agents import AgentExecutor
 import random
 import time
 
@@ -25,18 +37,14 @@ def get_docs(paths):
     return docs
 
 
-def get_text_chunks(docs):
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size = 1500,
-        chunk_overlap = 150, 
-        separators=["\n\n", "\n", "(?<=\. )", " ", ""], 
-        length_function = len
-        )
-    splits = text_splitter.split_documents(docs)
+def split_documents(docs):
+    nltk_splitter = NLTKTextSplitter(chunk_size=200)
+    splits = nltk_splitter.split_documents(docs)
     return splits
 
 
 def getAgent(vectorstore):
+    prompt = hub.pull("rlm/rag-prompt")    
     llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
 
     memory = ConversationBufferMemory(
@@ -46,8 +54,13 @@ def getAgent(vectorstore):
         llm=llm,
         retriever=vectorstore.as_retriever(),
         memory=memory,
+        condense_question_prompt=prompt
     )
     return agent
+
+def set_vector_store(docs, embed_model, save_dir):
+    faiss_db = FAISS.from_documents(docs, embed_model)
+    faiss_db.save_local(save_dir)
 
 load_dotenv()
 st.title("RAG ChatBot")
@@ -67,17 +80,13 @@ with st.sidebar:
         if st.button("Process"):
             with st.spinner("Processing"):
                 raw_text = get_docs(paths)
-                splits = get_text_chunks(raw_text)
-                embedding = OpenAIEmbeddings()
-                persist_dir = "./chroma"
+                docs = split_documents(raw_text)
+                embedding = GPT4AllEmbeddings()
+                set_vector_store(docs = docs, embed_model=embedding, save_dir='faiss_index')
 
-                vectordb = Chroma.from_documents(documents=splits,
-                                                embedding=embedding,
-                                                persist_directory=persist_dir)
+faiss_db = FAISS.load_local("faiss_index", GPT4AllEmbeddings())
 
-vectordb2 = Chroma(embedding_function=OpenAIEmbeddings(), persist_directory="./chroma")
-vectordb2.get()
-agent = getAgent(vectordb2)
+agent = getAgent(faiss_db)
 
 # Initialize chat history
 if "messages" not in st.session_state:
