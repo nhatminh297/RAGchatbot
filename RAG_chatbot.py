@@ -6,26 +6,20 @@ from dotenv import load_dotenv
 from langchain.document_loaders import PyPDFLoader
 from langchain.chains import ConversationalRetrievalChain
 from langchain.chat_models import ChatOpenAI
-from langchain.embeddings import OpenAIEmbeddings
 from langchain.memory import ConversationBufferMemory
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import GPT4AllEmbeddings
 from langchain.vectorstores import Chroma
 from langchain.vectorstores import FAISS
 from langchain.text_splitter import NLTKTextSplitter
-from langchain.agents.openai_functions_agent.agent_token_buffer_memory import (
-    AgentTokenBufferMemory,
-)
+from langchain.prompts import PromptTemplate
 from langchain import hub
-from langchain.agents.openai_functions_agent.base import OpenAIFunctionsAgent
-from langchain.prompts import MessagesPlaceholder
-from langchain.schema.messages import SystemMessage
-from langchain.agents.agent_toolkits import create_retriever_tool
-from langchain.agents import AgentExecutor
-import random
-import time
+from openai import OpenAI
 
 
+os.environ["LANGCHAIN_TRACING_V2"] = "true"
+os.environ["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus"
+os.environ["LANGCHAIN_API_KEY"] = "ls__87dc3360db3c42dab3bf3f911e4923f0"
 
 def get_docs(paths):
     loaders=[]
@@ -38,13 +32,31 @@ def get_docs(paths):
 
 
 def split_documents(docs):
-    nltk_splitter = NLTKTextSplitter(chunk_size=200)
-    splits = nltk_splitter.split_documents(docs)
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size = 1500,
+        chunk_overlap = 150, 
+        separators=["\n\n", "\n", "(?<=\. )", " ", ""], 
+        length_function = len
+        )
+    splits = text_splitter.split_documents(docs)
     return splits
 
 
 def getAgent(vectorstore):
-    prompt = hub.pull("rlm/rag-prompt")    
+    template = """
+    If they ask some common communication questions, you can answer them normally. 
+    If they ask about knowledge or topics that you think it unrelate to the context provided, 
+    remind them that you can only answer questions related to the topic of the document. 
+    But you can answer about what is in the chat.
+    Use the following pieces of context to answer the question at the end. 
+    If you don't know the answer, just say that you don't know, don't try to make up an answer. 
+    Use five sentences maximum. Keep the answer as concise as possible. 
+    Always say "thanks for asking!" at the end of the answer. 
+    {context}
+    Question: {question}
+    Helpful Answer:"""
+    PROMPT = PromptTemplate.from_template(template)
+        
     llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
 
     memory = ConversationBufferMemory(
@@ -54,7 +66,7 @@ def getAgent(vectorstore):
         llm=llm,
         retriever=vectorstore.as_retriever(),
         memory=memory,
-        condense_question_prompt=prompt
+        combine_docs_chain_kwargs={"prompt": PROMPT}
     )
     return agent
 
@@ -66,6 +78,8 @@ load_dotenv()
 st.title("RAG ChatBot")
 
 with st.sidebar:
+    openai_api_key = st.text_input("OpenAI API Key", key="chatbot_api_key", type="password")
+    
     st.subheader("Your documents")
     uploaded_files = st.file_uploader("Upload your PDFs", accept_multiple_files=True)
     if uploaded_files is not None:
@@ -83,12 +97,14 @@ with st.sidebar:
                 docs = split_documents(raw_text)
                 embedding = GPT4AllEmbeddings()
                 set_vector_store(docs = docs, embed_model=embedding, save_dir='faiss_index')
+    def clear_chat_history():
+        st.session_state.messages = [{"role": "assistant", "content": "How may I assist you today?"}]
+    st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
 
 faiss_db = FAISS.load_local("faiss_index", GPT4AllEmbeddings())
 
 agent = getAgent(faiss_db)
 
-# Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -97,12 +113,15 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("What is up?"):
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
+if input := st.chat_input("How may I assist you today?"):
+    if not openai_api_key:
+        st.info("Please add your OpenAI API key to continue.")
+        st.stop()
+
+    st.session_state.messages.append({"role": "user", "content": input})
 
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(input)
 
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
