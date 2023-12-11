@@ -28,12 +28,12 @@ def build_sentence_window_index(
         llm=llm,
         embed_model=embed_model,
         node_parser=node_parser,
-        system_prompt="""Based on the provided documents and information, 
-        You are an expert on the topics of all documents that user uploaded.
-        Your job is to answer questions related to information about their documents.
-        Keep your answers within a maximum of 7 sentences.
-        Keep the response as concise as posible and based on facts – do not hallucinate features.
-        If you don't know the answer, remind them what topics you can answer to.
+        system_prompt=
+        """ 
+        Your job is trying to answer the questions of user base on given context,
+        if you found that the context is not relevant to the question, tell them you don't found any relevant information 
+        about their question on given documents. keep the answer natural.
+        if you think their questions relate to the document, you can answer them by your knowledge.
         """
 
     )

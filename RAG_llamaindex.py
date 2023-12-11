@@ -73,7 +73,6 @@ for message in st.session_state.messages: # Display the prior chat messages
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
-
 if st.session_state.messages[-1]["role"] != "assistant":
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):

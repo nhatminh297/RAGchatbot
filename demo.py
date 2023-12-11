@@ -1,7 +1,5 @@
 import os
-import shutil
 import streamlit as st
-from PyPDF2 import PdfReader
 from dotenv import load_dotenv
 from langchain.document_loaders import PyPDFLoader
 from langchain.chains import ConversationalRetrievalChain
@@ -10,11 +8,13 @@ from langchain.memory import ConversationBufferMemory
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import GPT4AllEmbeddings
 from langchain.vectorstores.chroma import Chroma 
-from langchain.vectorstores.faiss import FAISS
-from langchain.text_splitter import NLTKTextSplitter
 from langchain.prompts import PromptTemplate
 from langchain.retrievers import ParentDocumentRetriever
 from langchain.storage import InMemoryStore
+from langchain.agents import Tool
+from langchain.utilities.serpapi import SerpAPIWrapper
+from langchain.agents import AgentType, Tool, initialize_agent
+from langchain.document_loaders import WebBaseLoader
 
 load_dotenv()
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
@@ -40,20 +40,22 @@ def split_documents(docs):
     splits = text_splitter.split_documents(docs)
     return splits
 
-
-def getQA(paths):
+def getQAtool(paths):
     template = """
-    Your job is trying to answer the questions of user base on given context,
-    The answer should not longer than 5 sentence. You should keep the response as concise as possiple.
-    If you found that the context is not relevant to the question, tell them you don't found any relevant information 
-    about their question on given documents. keep the answer natural.
-    
+    you are an expert about the topic of document they give to you.
+    Use the following pieces of context to answer the question at the end. 
+    If they ask some common communication questions, you can answer them normally. 
+    If they ask about knowledge or topics that you think it unrelate to the context provided, 
+    remind them that you can only answer questions related to the topic of the document. 
+    If you don't know the answer, just say that you don't know, don't try to make up an answer. 
+    Use five sentences maximum. Keep the answer as concise as possible. 
+    If they are not polite to you, you have the right to be rude to them.
     {context}
     Question: {question}
     Helpful Answer:"""
     PROMPT = PromptTemplate.from_template(template)
         
-    llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
+    llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
     memory = ConversationBufferMemory(
         memory_key='chat_history', return_messages=True)
     
@@ -72,23 +74,22 @@ def getQA(paths):
     )
 
     retriever.add_documents(get_docs(paths))
+    # loader = WebBaseLoader("https://openai.com/pricing")
+    # docs = loader.load()
+    # retriever.add_documents(docs)
     
     qa = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=retriever,
         memory=memory,
-        combine_docs_chain_kwargs={"prompt": PROMPT},
+        combine_docs_chain_kwargs={"prompt": PROMPT}
     )
     with st.sidebar:
         st.text("You are free to ask now!")
     return qa
 
-# def set_vector_store(docs, embed_model, save_dir):
-#     faiss_db = FAISS.from_documents(docs, embed_model)
-#     faiss_db.save_local(save_dir)
+st.title("RAG ChatBot")
 
-
-st.title("RAG Demo")
 paths = []
 with st.sidebar:
     openai_api_key = st.text_input("OpenAI API Key", key="chatbot_api_key", type="password")
@@ -102,21 +103,34 @@ with st.sidebar:
             paths.append(destination_file_path)
             with open(destination_file_path, "wb") as file:
                 file.write(uploaded_file.getbuffer())
-
-        # if st.button("Process"):
-        #     with st.spinner("Processing"):
-#                 raw_text = get_docs(paths)
-#                 docs = split_documents(raw_text)
-#                 set_vector_store(docs = docs, embed_model=GPT4AllEmbeddings(), save_dir='faiss_index')
                 
     def clear_chat_history():
         st.session_state.messages = [{"role": "assistant", "content": "How may I assist you today?"}]
     st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
 
+search = SerpAPIWrapper()
 try:
-    qa = getQA(paths=paths)
+    tools = [
+    Tool(
+        name="User uploaded documents QA system",
+        func=getQAtool(paths),
+        description="You should use this to aswer any of their question.",
+    ),
+    # Tool(
+    #     name="Search",
+    #     func=search.run,
+    #     description="useful for when you need to answer questions about current events"
+    # )
+]
+    # Construct the agent. We will use the default agent type here.
+    # See documentation for a full list of options.
+    llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+    agent = initialize_agent(
+        tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True
+    )
 except Exception:
     st.warning('⚠ Please upload your Documents')
+
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -140,7 +154,7 @@ if input := st.chat_input("How may I assist you today?"):
         message_placeholder = st.empty()
         full_response = ""
 
-        for response in qa.run(
+        for response in agent.run(
                 st.session_state.messages[-1]['content']
             ):
                 full_response += response
