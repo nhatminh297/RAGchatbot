@@ -12,7 +12,7 @@ from langchain.prompts import PromptTemplate
 from langchain.retrievers import ParentDocumentRetriever
 from langchain.storage import InMemoryStore
 from langchain.agents import Tool
-from langchain.utilities.serpapi import SerpAPIWrapper
+from langchain.utilities.searchapi import SearchApiAPIWrapper
 from langchain.agents import AgentType, Tool, initialize_agent
 from langchain.document_loaders import WebBaseLoader
 
@@ -43,7 +43,6 @@ def split_documents(docs):
 def getQAtool(paths):
     template = """
     you are an expert about the topic of document they give to you.
-    Use the following pieces of context to answer the question at the end. 
     If they ask some common communication questions, you can answer them normally. 
     If they ask about knowledge or topics that you think it unrelate to the context provided, 
     remind them that you can only answer questions related to the topic of the document. 
@@ -108,7 +107,7 @@ with st.sidebar:
         st.session_state.messages = [{"role": "assistant", "content": "How may I assist you today?"}]
     st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
 
-search = SerpAPIWrapper()
+search = SearchApiAPIWrapper()
 try:
     tools = [
     Tool(

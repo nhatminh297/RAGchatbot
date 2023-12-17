@@ -36,7 +36,7 @@ with st.sidebar:
     uploaded_files = st.file_uploader("Upload your PDFs", accept_multiple_files=True)
     if uploaded_files is not None:
         destination_path = ".\docs"
-        paths.append(os.path.join(destination_path, "temp.txt"))
+        # paths.append(os.path.join(destination_path, "temp.txt"))
         
         for uploaded_file in uploaded_files:
             destination_file_path = os.path.join(destination_path, uploaded_file.name)
@@ -58,25 +58,28 @@ with st.sidebar:
     def clear_chat_history():
         st.session_state.messages = [{"role": "assistant", "content": "How may I assist you today?"}]
     st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
-
-index = build_sentence_window_index(paths, 
+try:
+    index = build_sentence_window_index(paths, 
                                     OpenAI(model="gpt-3.5-turbo", temperature=0.1),
                                     save_dir="./llama_index")
 
-if "chat_engine" not in st.session_state.keys(): # Initialize the chat engine
-        st.session_state.chat_engine = get_sentence_window_chat_engine(index, similarity_top_k=6)
 
-if prompt := st.chat_input("Your question"): # Prompt for user input and save to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    if "chat_engine" not in st.session_state.keys(): # Initialize the chat engine
+            st.session_state.chat_engine = get_sentence_window_chat_engine(index, similarity_top_k=6)
 
-for message in st.session_state.messages: # Display the prior chat messages
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
+    if prompt := st.chat_input("Your question"): # Prompt for user input and save to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
 
-if st.session_state.messages[-1]["role"] != "assistant":
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            response = st.session_state.chat_engine.chat(prompt)
-            st.write(response.response)
-            message = {"role": "assistant", "content": response.response}
-            st.session_state.messages.append(message)
+    for message in st.session_state.messages: # Display the prior chat messages
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+
+    if st.session_state.messages[-1]["role"] != "assistant":
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                response = st.session_state.chat_engine.chat(prompt)
+                st.write(response.response)
+                message = {"role": "assistant", "content": response.response}
+                st.session_state.messages.append(message)
+except Exception:
+    st.warning('⚠ Please upload your Documents')
